@@ -1,8 +1,8 @@
 function data2DataFrame(data::DeedData)
   mxgc = max(data.customers, data.generators)
   df0 = DataFrame(
-    customers = repeat([data.customers], mxgc),
-    generators = repeat([data.generators], mxgc),
+    num_customers = repeat([data.customers], mxgc),
+    num_generators = repeat([data.generators], mxgc),
     periods = repeat([data.periods], mxgc),
     UB = repeat([data.UB], mxgc),
   )
@@ -34,15 +34,43 @@ function data2DataFrame(data::DeedData)
 end
 
 function data2DataFrame(data::GTDeedData)
+  customers = data.deedData.customers
+  # generators = data.deedData.generators
+  # periods = data.deedData.periods
   deedDf = data2DataFrame(data.deedData)
-  df1 = DataFrame(
-    Dict(zip(["customer_cost_a", "customer_cost_b", "customer_cost_c"], eachcol(data.costCoef))),
-  )
-  df2 = DataFrame(
-    Dict(zip(["customer_$(i)_demand" for i = 1:data.deedData.customers], eachcol(data.CDemandt))),
-  )
+  fld_names = fieldnames(GTDeedData) |> x -> filter(y -> y != :deedData, x)
+  customer_matrix_fld_names = filter(fld_names) do fld
+    d = getfield(data, fld)
+    if isa(d, Matrix)
+      r, _ = size(d)
+      r == customers
+    else
+      false
+    end
+  end
+  customer_matrix_df = map(customer_matrix_fld_names) do fld
+    d = getfield(data, fld)
+    DataFrame(Dict(zip(["customer_$(i)_$(String(fld))" for i = 1:customers], eachcol(d))))
+  end
+  customer_vector_fld_names = filter(fld_names) do fld
+    d = getfield(data, fld)
+    if isa(d, Vector)
+      length(d) == customers
+    else
+      false
+    end
+  end
+  customer_vector_df = map(customer_vector_fld_names) do fld
+    d = getfield(data, fld)
+    DataFrame(String(fld) => d)
+  end
+
   df3 = DataFrame(pimin = data.pimin, pimax = data.pimax)
-  Dict(deedDf..., :customers_coef => df1, :customers_demand => df2, :customers_powerlimits => df3)
+  Dict(
+    deedDf...,
+    :customers_data => hcat(customer_vector_df..., customer_matrix_df...),
+    :customers_powerlimits => df3,
+  )
 end
 """
   deedSolution::DRDeedSolution
@@ -74,12 +102,13 @@ function solution2DataFrame(solution::GTDRDeedSolution)
   xdf = DataFrame(Dict(zip(["customer_$(i)_x" for i = 1:customers], eachrow(x))))
   ydf = DataFrame(Dict(zip(["customer_$(i)_y_allj" for i = 1:customers], eachrow(yallj))))
   df = hcat(cdf, pdf, sdf, hdf, fdf, xdf, ydf)
-  Dict(drdeed..., :customers => df)
+  Dict(drdeed..., :gtrdcustomers => df)
 end
 function solution2DataFrame(solution::DRDeedSolution)
   χ = solution.χ
   ω = solution.ω
   q = solution.q
+  w = solution.w
   Cost = solution.Cost
   Emission = solution.Emission
   Utility = solution.Utility
@@ -93,6 +122,7 @@ function solution2DataFrame(solution::DRDeedSolution)
     :utility => [Utility],
     :loss => sum(Loss),
     :power => [PowerGenerated],
+    :weights => join(w, ","),
   )
   dfloss = DataFrame(:losst => Loss)
   df2 = DataFrame(Dict(zip(["customer_$(i)_chi" for i = 1:customers], eachrow(χ))))
@@ -100,5 +130,26 @@ function solution2DataFrame(solution::DRDeedSolution)
 
   df4 = DataFrame(Dict(zip(["generator_$(j)_q" for j = 1:generators], eachrow(q))))
 
-  Dict(:summary => df1, :customers => hcat(dfloss, df2, df3), :generators => hcat(dfloss, df4))
+  Dict(:summary => df1, :drcustomers => hcat(dfloss, df2, df3), :drgenerators => hcat(dfloss, df4))
+end
+
+function solution2DataFrame(solution::DeedSolution)
+  P = solution.P
+  w = solution.w
+  Cost = solution.Cost
+  Emission = solution.Emission
+  Loss = solution.Loss
+  PowerGenerated = sum(P)
+  generators = size(P, 1)
+  df1 = DataFrame(
+    :cost => [Cost],
+    :emission => [Emission],
+    :loss => sum(Loss),
+    :power => [PowerGenerated],
+    :weights => join(w, ","),
+  )
+  dfloss = DataFrame(:losst => Loss)
+  df4 = DataFrame(Dict(zip(["generator_$(j)_P" for j = 1:generators], eachrow(P))))
+
+  Dict(:summary => df1, :generators => hcat(dfloss, df4))
 end

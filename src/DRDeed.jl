@@ -4,6 +4,7 @@ include("types.jl")
 include("data.jl")
 include("models/models.jl")
 include("presentations.jl")
+include("utils.jl")
 
 
 # solveit,
@@ -23,5 +24,11 @@ export getDRDeedData,
   gtdrdeed,
   data2DataFrame,
   solution2DataFrame,
-  getGTDRDeedData
+  getGTDRDeedData,
+  slim_data,
+  saveModel,
+  loadModel,
+  solveModel,
+  SuccessResult,
+  FailResult
 end # module DRDeed

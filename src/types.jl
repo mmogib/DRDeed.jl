@@ -1,3 +1,8 @@
+abstract type ProblemModel end
+abstract type SlimModel <: ProblemModel end
+abstract type DeedModel <: ProblemModel end
+abstract type DRDeedModel <: ProblemModel end
+abstract type GTDeedModel <: ProblemModel end
 abstract type ModelData end
 abstract type ModelSolution end
 abstract type ModelResult end
@@ -60,7 +65,7 @@ struct DeedData <: ModelData
   g::Vector{Float64}
   λ::Array{Float64,2}
 end
-
+# Base.fieldnames(dd::DeedData) = (:custom)
 
 struct DeedSolution <: ModelSolution
   P::Array{Float64,2}
@@ -130,13 +135,15 @@ end
 
 ## Results
 
-struct SuccessResult <: ModelResult
-  data::ModelData
-  solution::ModelSolution
+struct SuccessResult{T<:ModelData,S<:ModelSolution} <: ModelResult
+  model::JuMP.Model
+  data::T
+  solution::S
 end
 
 
-struct FailResult <: ModelResult
-  data::ModelData
-  messga::String
+struct FailResult{T<:ModelData,S<:ModelSolution} <: ModelResult
+  model::JuMP.Model
+  data::T
+  message::S
 end

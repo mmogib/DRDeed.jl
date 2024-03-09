@@ -1,101 +1,298 @@
 
 # slim data
-function getSlimData(customers::Int = 3, generators::Int = 1, periods::Int = 2)
-  if customers == 3 && generators == 1 && periods == 2
-    aith = [0.3 0.58; 0.39 0.7; 0.59 0.53]
-    aitp = [0.54 0.95; 0.89 0.92; 0.65 0.93]
-    aits = [0.54 0.95; 0.89 0.92; 0.65 0.93]
-    aitf = [0.97 0.97; 0.99 0.98; 0.97 0.97]
+function matrix2DF(M::Array{<:Number,2}, name::String)
+  DataFrame(Dict(zip(["$(name)_$i" for i = 1:size(M, 2)], eachcol(M))))
+end
 
-    ajts = [0.3 0.48]
-    ajtp = [0.3 0.48]
-
-    aijtx = Array{Float64,3}(undef, 3, 1, 2)
-    aijtx[:, 1, :] = [0.86 0.97; 0.91 0.92; 0.67 0.95]
-    aijty = Array{Float64,3}(undef, 3, 1, 2)
-    aijty[:, 1, :] = [1.163 1.031; 1.099 1.087; 1.493 1.053]
-
-    Dit = [5 5; 5 5; 3 5]
-    Kit = [1 1; 1 2; 2 2]
-    Cit = [2 1; 3 3; 3 3]
-    Lit = [3 2; 3 2; 4 2]
-    Kjt = [10 10]
-    Cjt = [12 12]
-    Ljt = [11 10]
-
-    return SlimData(
-      customers,
-      generators,
-      periods,
-      aith,
-      aitp,
-      aits,
-      aitf,
-      ajtp,
-      ajts,
-      aijtx,
-      aijty,
-      Dit,
-      Lit,
-      Kit,
-      Cit,
-      Ljt,
-      Kjt,
-      Cjt,
-    )
-  else
-    d = Normal()
-    d37 = truncated(d, 0.299, 0.709)
-    d35 = truncated(d, 0.299, 0.509)
-    d1 = truncated(d, 0.15, 0.5)
-    d5 = truncated(d, 0.5, 0.95)
-    d9 = truncated(d, 0.9, 1)
-    aith = rand(d37, customers, periods)
-    aitp = rand(d5, customers, periods)
-    aits = rand(d5, customers, periods)
-    aitf = rand(d9, customers, periods)
-
-    ajts = rand(d35, generators, periods)
-    ajtp = rand(d35, generators, periods)
-
-    aijtx = Array{Float64,3}(undef, customers, generators, periods)
-    foreach(1:periods) do t
-      aijtx[:, :, t] = rand(d5, customers, generators)
-    end
-    aijty = Array{Float64,3}(undef, customers, generators, periods)
-    foreach(1:periods) do t
-      aijty[:, :, t] = 1.0 .+ rand(d1, customers, generators)
-    end
-
-    Dit = rand(3:10, customers, periods)
-    Kit = rand(1:5, customers, periods)
-    Cit = rand(1:5, customers, periods)
-    Lit = rand(1:5, customers, periods)
-    Kjt = rand(10:30, generators, periods)
-    Cjt = rand(10:30, generators, periods)
-    Ljt = rand(10:30, generators, periods)
-
-    return SlimData(
-      customers,
-      generators,
-      periods,
-      aith,
-      aitp,
-      aits,
-      aitf,
-      ajtp,
-      ajts,
-      aijtx,
-      aijty,
-      Dit,
-      Lit,
-      Kit,
-      Cit,
-      Ljt,
-      Kjt,
-      Cjt,
-    )
+function slim_random(mn, mx)
+  if mn > mx
+    println("mn $mn mx $mx")
+    println("Error Random Generator")
+    return mn
   end
+  return mn + rand() * (mx - mn)
+end
+
+function slim_data(n::Int, m::Int, T::Int)
+  dfit = DataFrame()
+  dfjt = DataFrame()
+  dfijx = Vector{DataFrame}(undef, T)
+  dfijy = Vector{DataFrame}(undef, T)
+
+  aith = zeros(n, T)
+  for i = 1:n
+    for t = 1:T
+      aith[i, t] = slim_random(30, 80) / 100
+    end
+  end
+  dfit = hcat(dfit, matrix2DF(aith, "aith"))
+  aitp = zeros(Float64, n, T)
+  for i = 1:n
+    for t = 1:T
+      aitp[i, t] = slim_random(round(aith[i, t] * 100), 100) / 100
+    end
+
+  end
+  dfit = hcat(dfit, matrix2DF(aitp, "aitp"))
+
+  aits = copy(aitp)
+  dfit = hcat(dfit, matrix2DF(aits, "aits"))
+
+
+  aijtx = zeros(Float64, (n, m, T))
+  max_aijtx = 0.0
+
+  for i = 1:n
+    for j = 1:m
+      for t = 1:T
+        aijtx[i, j, t] = slim_random((aits[i, t] * 100), 100) / 100
+        if max_aijtx < aijtx[i, j, t]
+          max_aijtx = aijtx[i, j, t]
+        end
+      end
+    end
+  end
+  dfijx = map(t -> matrix2DF(aijtx[:, :, t], "aijtx"), 1:T)
+
+  aitf = zeros(Float64, n, T)
+  for i = 1:n
+    for t = 1:T
+      if t >= 2
+        aitf[i, t] =
+          slim_random(max(aitf[i, t-1] - aits[i, t-1] - aith[i, t], max_aijtx * 100), 100) / 100
+      else
+        aitf[i, t] = slim_random(max_aijtx * 100, 100) / 100
+      end
+    end
+
+  end
+  dfit = hcat(dfit, matrix2DF(aitf, "aitf"))
+  ajts = zeros(Float64, m, T)
+  for j = 1:m
+    for t = 1:T
+      ajts[j, t] = slim_random(30, 80) / 100
+    end
+  end
+  dfjt = hcat(dfjt, matrix2DF(ajts, "ajts"))
+  ajtp = copy(ajts)
+
+  dfjt = hcat(dfjt, matrix2DF(ajtp, "ajtp"))
+
+  aijty = zeros(Float64, (n, m, T))
+  for i = 1:n
+    for j = 1:m
+      for t = 1:T
+        aijty[i, j, t] = 1 / aijtx[i, j, t]
+      end
+    end
+  end
+  dfijy = map(t -> matrix2DF(aijty[:, :, t], "aijty"), 1:T)
+
+  D = zeros(n, T)
+  for i = 1:n
+    for t = 1:T
+      D[i, t] = slim_random(3, 7)
+    end
+  end
+
+  Ki = zeros(n, T)
+  for i = 1:n
+    for t = 1:T
+      Ki[i, t] = slim_random(1, 3)
+    end
+  end
+
+  Ci = zeros(n, T)
+  for i = 1:n
+    for t = 1:T
+      Ci[i, t] = slim_random(1, 4)
+    end
+  end
+
+  Li = zeros(n, T)
+  for i = 1:n
+    for t = 1:T
+      Li[i, t] = slim_random(2, 5)
+    end
+  end
+  dfit = hcat(
+    dfit,
+    matrix2DF(D, "Dit"),
+    matrix2DF(Ki, "Kit"),
+    matrix2DF(Ci, "Cit"),
+    matrix2DF(Li, "Lit"),
+  )
+
+  Kj = zeros(m, T)
+  for j = 1:m
+    for t = 1:T
+      Kj[j, t] = trunc(Int, slim_random(0, 13))
+    end
+  end
+
+  Cj = zeros(m, T)
+  for j = 1:m
+    for t = 1:T
+      Cj[j, t] = slim_random(7, 13)
+    end
+  end
+
+  Lj = zeros(m, T)
+  for j = 1:m
+    for t = 1:T
+      Lj[j, t] = slim_random(8, 14)
+    end
+  end
+  dfjt = hcat(dfjt, matrix2DF(Kj, "Kjt"), matrix2DF(Cj, "Cjt"), matrix2DF(Lj, "Ljt"))
+  return Dict(:it => dfit, :jt => dfjt, :ijx => dfijx, :ijy => dfijy)
+end
+
+function getSlimData(customers::Int = 3, generators::Int = 1, periods::Int = 2)
+  dfs = slim_data(customers, generators, periods)
+  aith = select(dfs[:it], ["aith_$i" for i = 1:periods]) |> Matrix
+  aitp = select(dfs[:it], ["aitp_$i" for i = 1:periods]) |> Matrix
+  aits = select(dfs[:it], ["aits_$i" for i = 1:periods]) |> Matrix
+  aitf = select(dfs[:it], ["aitf_$i" for i = 1:periods]) |> Matrix
+  ajtp = select(dfs[:jt], ["ajtp_$i" for i = 1:periods]) |> Matrix
+  ajts = select(dfs[:jt], ["ajts_$i" for i = 1:periods]) |> Matrix
+  aijtx = Array{Float64,3}(undef, customers, generators, periods)
+  dfx = dfs[:ijx]
+  for t = 1:periods
+    aijtx[:, :, t] = select(dfx[t], ["aijtx_$i" for i = 1:generators]) |> Matrix
+  end
+  aijty = Array{Float64,3}(undef, customers, generators, periods)
+  dfy = dfs[:ijy]
+  for t = 1:periods
+    aijty[:, :, t] = select(dfy[t], ["aijty_$i" for i = 1:generators]) |> Matrix
+  end
+  Dit = select(dfs[:it], ["Dit_$i" for i = 1:periods]) |> Matrix
+  Lit = select(dfs[:it], ["Lit_$i" for i = 1:periods]) |> Matrix
+  Kit = select(dfs[:it], ["Kit_$i" for i = 1:periods]) |> Matrix
+  Cit = select(dfs[:it], ["Cit_$i" for i = 1:periods]) |> Matrix
+  Ljt = select(dfs[:jt], ["Ljt_$i" for i = 1:periods]) |> Matrix
+  Kjt = select(dfs[:jt], ["Kjt_$i" for i = 1:periods]) |> Matrix
+  Cjt = select(dfs[:jt], ["Cjt_$i" for i = 1:periods]) |> Matrix
+  # if customers == 3 && generators == 1 && periods == 2
+  #   aith = [0.3 0.58; 0.39 0.7; 0.59 0.53]
+  #   aitp = [0.54 0.95; 0.89 0.92; 0.65 0.93]
+  #   aits = [0.54 0.95; 0.89 0.92; 0.65 0.93]
+  #   aitf = [0.97 0.97; 0.99 0.98; 0.97 0.97]
+
+  #   ajts = [0.3 0.48]
+  #   ajtp = [0.3 0.48]
+
+  #   aijtx = Array{Float64,3}(undef, 3, 1, 2)
+  #   aijtx[:, 1, :] = [0.86 0.97; 0.91 0.92; 0.67 0.95]
+  #   aijty = Array{Float64,3}(undef, 3, 1, 2)
+  #   aijty[:, 1, :] = [1.163 1.031; 1.099 1.087; 1.493 1.053]
+
+  #   Dit = [5 5; 5 5; 3 5]
+  #   Kit = [1 1; 1 2; 2 2]
+  #   Cit = [2 1; 3 3; 3 3]
+  #   Lit = [3 2; 3 2; 4 2]
+  #   Kjt = [10 10]
+  #   Cjt = [12 12]
+  #   Ljt = [11 10]
+
+  #   return SlimData(
+  #     customers,
+  #     generators,
+  #     periods,
+  #     aith,
+  #     aitp,
+  #     aits,
+  #     aitf,
+  #     ajtp,
+  #     ajts,
+  #     aijtx,
+  #     aijty,
+  #     Dit,
+  #     Lit,
+  #     Kit,
+  #     Cit,
+  #     Ljt,
+  #     Kjt,
+  #     Cjt,
+  #   )
+  # else
+  #   # 0< aith <= aitp =aits <= aijtx <= aitf
+  #   # aijtx <= aijty <= aitf
+  #   d = Normal()
+  #   d37 = truncated(d, 0.299, 0.709)
+  #   d35 = truncated(d, 0.299, 0.509)
+  #   d1 = truncated(d, 0.15, 0.5)
+  #   # d5 = truncated(d, 0.5, 0.95)
+  #   # d9 = truncated(d, 0.9, 1)
+  #   aith = rand(d37, customers, periods)
+  #   aitp = aith .+ (d.σ / 2)
+  #   aits = aitp
+  #   aitf = aits .+ (2 * d.σ)
+
+  #   ajts = rand(d35, generators, periods)
+  #   ajtp = ajts
+
+  #   aijty = Array{Float64,3}(undef, customers, generators, periods)
+  #   foreach(1:periods) do t
+  #     tmp = aitp[:, t] .+ rand(d35, customers, generators)
+  #     aijty[:, :, t] = min.(tmp, aitf[:, t])
+  #   end
+
+  #   aijtx = Array{Float64,3}(undef, customers, generators, periods)
+  #   foreach(1:periods) do t
+  #     tmp = aitp[:, t] .+ rand(d1, customers, generators)
+  #     aijtx[:, :, t] = min.(tmp, aijty[:, :, t])
+  #   end
+
+
+  #   Dit = rand(3:10, customers, periods)
+  #   Kit = rand(1:5, customers, periods)
+  #   Cit = rand(1:5, customers, periods)
+  #   Lit = rand(1:5, customers, periods)
+  #   Kjt = rand(10:30, generators, periods)
+  #   Cjt = rand(10:30, generators, periods)
+  #   Ljt = rand(10:30, generators, periods)
+
+  #   return SlimData(
+  #     customers,
+  #     generators,
+  #     periods,
+  #     aith,
+  #     aitp,
+  #     aits,
+  #     aitf,
+  #     ajtp,
+  #     ajts,
+  #     aijtx,
+  #     aijty,
+  #     Dit,
+  #     Lit,
+  #     Kit,
+  #     Cit,
+  #     Ljt,
+  #     Kjt,
+  #     Cjt,
+  #   )
+  # end
+  return SlimData(
+    customers,
+    generators,
+    periods,
+    aith,
+    aitp,
+    aits,
+    aitf,
+    ajtp,
+    ajts,
+    aijtx,
+    aijty,
+    Dit,
+    Lit,
+    Kit,
+    Cit,
+    Ljt,
+    Kjt,
+    Cjt,
+  )
 end
 
 # deed data
