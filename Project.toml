@@ -1,7 +1,7 @@
 name = "DRDeed"
 uuid = "457e4f97-49fd-4ac2-87c1-02e783c4497f"
 authors = ["Mohammed Alshahrani <mmogib@gmail.com>"]
-version = "0.2.0"
+version = "0.3.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"

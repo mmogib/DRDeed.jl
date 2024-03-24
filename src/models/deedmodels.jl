@@ -103,22 +103,14 @@ function gtdrdeed(
 
   @NLconstraint(
     model,
-    benefit[i in 1:customers],
-    sum(
-      ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) + Ci[i, t] for
-      t = 1:periods
-    ) >= 0
+    benefit[i in 1:customers, t in 1:periods],
+    ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) >= 0
   )
   @NLconstraint(
     model,
-    benefit2[i in 2:customers],
-    sum(
-      ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) + Ci[i, t] for
-      t = 1:periods
-    ) >= sum(
-      ω[i-1, t] - χ[i-1, t] * (data.K1[i-1] * χ[i-1, t] + (1 - data.θ[i-1]) * data.K2[i-1]) +
-      Ci[i-1, t] for t = 1:periods
-    )
+    benefit2[i in 2:customers, t in 1:periods],
+    ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) >=
+    ω[i-1, t] - χ[i-1, t] * (data.K1[i-1] * χ[i-1, t] + (1 - data.θ[i-1]) * data.K2[i-1])
   )
 
   @constraint(model, budget, sum(ω[i, t] for i = 1:customers for t = 1:periods) <= data.UB)
@@ -127,8 +119,9 @@ function gtdrdeed(
   @constraint(model, storage2[i in 1:customers], s[i, periods] == 0)
   @constraint(model, shifted_load[i in 1:customers], h[i, 1] == 0)
 
-  function solvegtdrdeed(; w::Vector{Float64} = ones(3))
-    @NLobjective(model, Min, w[1] * C + w[2] * E - w[3] * utility)
+  function solvegtdrdeed(; w::Vector{Float64} = ones(4))
+    @constraint(model, balance_chi[i in 1:customers, t in 1:periods], χ[i, t] <= h[i, t] + s[i, t])
+    @NLobjective(model, Min, w[1] * C + w[2] * E - w[3] * utility + w[4] * Ccust)
     optimize!(model)
 
     if (has_values(model))
@@ -278,22 +271,23 @@ function drdeed(
 
   @constraint(model, [t in 1:periods], data.pjmin .<= q[:, t] .<= data.pjmax)
   @constraint(model, [t in 1:(periods-1)], -data.DR .<= (q[:, t+1] - q[:, t]) .<= data.UR)
+  # @NLexpression(
+  #   model,
+  #   bnft[i in 1:customers],
+  #   sum(
+  #     ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) for t = 1:periods
+  #   )
+  # )
   @NLconstraint(
     model,
-    benefit[i in 1:customers],
-    sum(
-      ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) for t = 1:periods
-    ) >= 0
+    benefit[t in 1:periods, i = 1:customers],
+    ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) >= 0
   )
   @NLconstraint(
     model,
-    benefit2[i in 2:customers],
-    sum(
-      ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) for t = 1:periods
-    ) >= sum(
-      ω[i-1, t] - χ[i-1, t] * (data.K1[i-1] * χ[i-1, t] + (1 - data.θ[i-1]) * data.K2[i-1]) for
-      t = 1:periods
-    )
+    benefit2[t in 1:periods, i = 2:customers],
+    ω[i, t] - χ[i, t] * (data.K1[i] * χ[i, t] + (1 - data.θ[i]) * data.K2[i]) >=
+    ω[i-1, t] - χ[i-1, t] * (data.K1[i-1] * χ[i-1, t] + (1 - data.θ[i-1]) * data.K2[i-1])
   )
 
   @constraint(model, budget, sum(ω[i, t] for i = 1:customers for t = 1:periods) <= data.UB)
@@ -310,7 +304,7 @@ function drdeed(
         value.(q),
         value(C),
         value(E),
-        sum(value.(q)),
+        value(utility),
         value.(losst),
         w,
       )

@@ -50,7 +50,7 @@ function data2DataFrame(data::GTDeedData)
   end
   customer_matrix_df = map(customer_matrix_fld_names) do fld
     d = getfield(data, fld)
-    DataFrame(Dict(zip(["customer_$(i)_$(String(fld))" for i = 1:customers], eachcol(d))))
+    DataFrame(Dict(zip([String(fld) for i = 1:customers], eachcol(d))))
   end
   customer_vector_fld_names = filter(fld_names) do fld
     d = getfield(data, fld)
