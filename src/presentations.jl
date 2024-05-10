@@ -1,3 +1,73 @@
+function data2DataFrame(data::SlimData)
+  # customers::Int
+  # generators::Int
+  # periods::Int
+  # Caith::Matrix{Float64}
+  # Caitp::Matrix{Float64} # rows: customers, cols: periods
+  # Caits::Matrix{Float64}
+  # Caitf::Matrix{Float64}
+  # Cajtp::Matrix{Float64}
+  # Cajts::Matrix{Float64}
+  # Caijtx::Array{Float64,3}
+  # Caijty::Array{Float64,3}
+  # DemandDt::Matrix{Float64}
+  # CProductionLimitst::Matrix{Float64} # Lit
+  # CPowerUpperLimitst::Matrix{Float64} # Kit
+  # CStorageUpperLimitst::Matrix{Float64} # Cit
+  # PProductionLimitst::Matrix{Float64} # Ljt
+  # PPowerUpperLimitst::Matrix{Float64} # Kjt
+  # PStorageUpperLimitst::Matrix{Float64} # Cjt
+  mxgc = max(data.customers, data.generators)
+  df0 = DataFrame(
+    num_customers = repeat([data.customers], mxgc),
+    num_generators = repeat([data.generators], mxgc),
+    periods = repeat([data.periods], mxgc),
+  )
+
+  dfch = DataFrame(Dict(zip(["customer_Cai$(i)h" for i = 1:data.periods], eachcol(data.Caith))))
+  dfcp = DataFrame(Dict(zip(["customer_Cai$(i)p" for i = 1:data.periods], eachcol(data.Caitp))))
+  dfcs = DataFrame(Dict(zip(["customer_Cai$(i)s" for i = 1:data.periods], eachcol(data.Caits))))
+  dfcf = DataFrame(Dict(zip(["customer_Cai$(i)f" for i = 1:data.periods], eachcol(data.Caitf))))
+  dfcDt = DataFrame(Dict(zip(["customer_Di$(i)" for i = 1:data.periods], eachcol(data.DemandDt))))
+  dfcLt = DataFrame(
+    Dict(zip(["customer_Li$(i)" for i = 1:data.periods], eachcol(data.CProductionLimitst))),
+  )
+  dfcKt = DataFrame(
+    Dict(zip(["customer_Ki$(i)" for i = 1:data.periods], eachcol(data.CPowerUpperLimitst))),
+  )
+
+  dfgp = DataFrame(Dict(zip(["generators_Caj$(i)p" for i = 1:data.periods], eachcol(data.Cajtp))))
+  dfgs = DataFrame(Dict(zip(["generators_Caj$(i)s" for i = 1:data.periods], eachcol(data.Cajts))))
+  dfgLt = DataFrame(
+    Dict(zip(["generators_Lj$(i)" for i = 1:data.periods], eachcol(data.PProductionLimitst))),
+  )
+  dfgKt = DataFrame(
+    Dict(zip(["generators_Kj$(i)" for i = 1:data.periods], eachcol(data.PPowerUpperLimitst))),
+  )
+  dfgCt = DataFrame(
+    Dict(zip(["generators_Cj$(i)" for i = 1:data.periods], eachcol(data.PStorageUpperLimitst))),
+  )
+  dfcC = map(1:data.customers) do i
+    df1 = map(1:data.generators) do j
+      d1 = DataFrame(
+        Dict(zip(["generators_Ca$(i)$(j)$(t)x" for t = 1:data.periods], data.Caijtx[i, j, :])),
+      )
+      d2 = DataFrame(
+        Dict(zip(["generators_Ca$(i)$(j)$(t)y" for t = 1:data.periods], data.Caijty[i, j, :])),
+      )
+      hcat(d1, d2)
+    end
+    hcat(df1...)
+  end
+  # cxdf = 
+  Dict(
+    :slim_customers => hcat(df0[1:data.customers, :], dfch, dfcp, dfcs, dfcf, dfcDt, dfcLt, dfcKt),
+    :slim_generators => hcat(df0[1:data.generators, :], dfgp, dfgs, dfgLt, dfgKt, dfgCt),
+    Dict(zip([Symbol("Cxy_$i") for i = 1:data.customers], dfcC))...,
+  )
+
+end
+
 function data2DataFrame(data::DeedData)
   mxgc = max(data.customers, data.generators)
   df0 = DataFrame(
@@ -32,7 +102,6 @@ function data2DataFrame(data::DeedData)
   )
 
 end
-
 function data2DataFrame(data::GTDeedData)
   customers = data.deedData.customers
   # generators = data.deedData.generators
@@ -102,7 +171,9 @@ function solution2DataFrame(solution::GTDRDeedSolution)
   xdf = DataFrame(Dict(zip(["customer_$(i)_x" for i = 1:customers], eachrow(x))))
   ydf = DataFrame(Dict(zip(["customer_$(i)_y_allj" for i = 1:customers], eachrow(yallj))))
   df = hcat(cdf, pdf, sdf, hdf, fdf, xdf, ydf)
-  Dict(drdeed..., :gtrdcustomers => df)
+  gtdr_summary =
+    hcat(drdeed[:summary], DataFrame(customer_power = [sum(p)], customer_cost = [sum(cost)]))
+  Dict(drdeed..., :gtrdcustomers => df, :gtdr_summary => gtdr_summary)
 end
 function solution2DataFrame(solution::DRDeedSolution)
   χ = solution.χ
