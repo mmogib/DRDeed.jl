@@ -62,7 +62,7 @@ function gtdrdeed(
   @NLexpression(
     model,
     utility,
-    sum(data.λ[i, t] * χ[i, t] - ω[i, t] for i = 1:customers for t = 1:periods)
+    sum(data.λ[i, t] * χ[i, t] - ω[i, t] for i = 1:customers for t = 1:periods) + Ccust
   )
 
   @NLexpression(
@@ -97,6 +97,7 @@ function gtdrdeed(
   # limits -->
   @constraint(model, [t in 1:periods-1], gtdata.pimin .<= s[:, t] .<= gtdata.pimax)
   @constraint(model, [t in 1:periods], gtdata.pimin .<= p[:, t] .<= gtdata.pimax)
+  @constraint(model, [t in 1:periods], sum(x[:, t]) .<= gtdata.pimax)
   @constraint(model, [t in 1:periods], data.pjmin .<= q[:, t] .<= data.pjmax)
   @constraint(model, [t in 1:(periods-1)], -data.DR .<= (q[:, t+1] - q[:, t]) .<= data.UR)
   # <-- limits
@@ -119,9 +120,9 @@ function gtdrdeed(
   @constraint(model, storage2[i in 1:customers], s[i, periods] == 0.0)
   @constraint(model, shifted_load[i in 1:customers], h[i, 1] == 0)
 
-  function solvegtdrdeed(; w::Vector{Float64} = ones(4))
+  function solvegtdrdeed(; w::Vector{Float64} = ones(3))
     @constraint(model, balance_chi[i in 1:customers, t in 1:periods], χ[i, t] <= h[i, t] + s[i, t])
-    @NLobjective(model, Min, w[1] * C + w[2] * E - w[3] * utility - w[4] * Ccust)
+    @NLobjective(model, Min, w[1] * C + w[2] * E - w[3] * utility)
     optimize!(model)
 
     if (has_values(model))
