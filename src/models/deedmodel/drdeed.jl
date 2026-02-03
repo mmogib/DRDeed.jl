@@ -186,8 +186,8 @@ function drdeed(
     @NLconstraint(model, (v[3] + z * d[3] + utility) >= 0)
     @objective(model, Min, z)
     optimize!(model)
-    x = value.(vcat(q[:], χ[:], ω[:]))
     if (has_values(model))
+      x = value.(vcat(q[:], χ[:], ω[:]))
       return x, value.(z)
     else
       return nothing
