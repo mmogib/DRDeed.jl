@@ -26,5 +26,10 @@ export getDRDeedData,
   loadModel,
   solveModel,
   SuccessResult,
-  FailResult
+  FailResult,
+  BranchData,
+  NetworkData,
+  getIEEE30Data,
+  getSaudiDeedData,
+  getSaudiGTDeedData
 end # module DRDeed

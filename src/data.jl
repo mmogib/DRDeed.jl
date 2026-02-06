@@ -581,11 +581,11 @@ function getGTDRDeedData(customers::Int, generators::Int, periods::Int)
   means_of_generators_coef =
     repeat(mean.([deed_data.a deed_data.b deed_data.c]) ./ customers, customers)
   dists = fit.(Normal, eachcol(means_of_generators_coef))
-  adot_it, bdot_it, cdot_it = rand(dists[1], customers, periods),
-  rand(dists[2], customers, periods),
-  rand(dists[3], customers, periods)
-
-  ddot_it, edot_it = bdot_it, cdot_it
+  adot_it, bdot_it = rand(dists[1], customers, periods), rand(dists[2], customers, periods)
+  # Quadratic coefficients negative for strict concavity of U_i (diminishing returns)
+  cdot_it = -abs.(rand(dists[3], customers, periods))  # coef of p^2 < 0
+  ddot_it = -abs.(rand(dists[3], customers, periods))  # coef of s^2 < 0
+  edot_it = rand(dists[2], customers, periods)         # coef of s (linear)
   ahdot_it = adot_it .- 0.25 * dists[1].σ
   nudot_it = adot_it .+ 0.25 * dists[1].σ
   afdot_it = nudot_it .+ 0.125 * dists[1].σ
@@ -787,3 +787,371 @@ function getDRDeedData(customers::Int, generators::Int, periods::Int)
   )
 end
 
+
+function getIEEE30Data(generators::Int, customers::Int)
+  # IEEE 30-bus system: 30 buses, 41 branches, 6 generator buses
+  # Standard data from Alsac & Stott (1974), base MVA = 100
+  #
+  # Branch data: (from, to, r_pu, x_pu, rating_MVA)
+  branch_raw = [
+    1  2  0.0192 0.0575 130.0
+    1  3  0.0452 0.1852 130.0
+    2  4  0.0570 0.1737  65.0
+    3  4  0.0132 0.0379 130.0
+    2  5  0.0472 0.1983 130.0
+    2  6  0.0581 0.1763  65.0
+    4  6  0.0119 0.0414  90.0
+    5  7  0.0460 0.1160  70.0
+    6  7  0.0267 0.0820 130.0
+    6  8  0.0120 0.0420  32.0
+    6  9  0.0000 0.2080  65.0
+    6  10 0.0000 0.5560  32.0
+    9  11 0.0000 0.2080  65.0
+    9  10 0.0000 0.1100  65.0
+    4  12 0.0000 0.2560  65.0
+    12 13 0.0000 0.1400  65.0
+    12 14 0.1231 0.2559  32.0
+    12 15 0.0662 0.1304  32.0
+    12 16 0.0945 0.1987  32.0
+    14 15 0.2210 0.1997  16.0
+    16 17 0.0824 0.1923  16.0
+    15 18 0.1070 0.2185  16.0
+    18 19 0.0639 0.1292  16.0
+    19 20 0.0340 0.0680  32.0
+    10 20 0.0936 0.2090  32.0
+    10 17 0.0324 0.0845  32.0
+    10 21 0.0348 0.0749  32.0
+    10 22 0.0727 0.1499  32.0
+    21 22 0.0116 0.0236  32.0
+    15 23 0.1000 0.2020  16.0
+    22 24 0.1150 0.1790  16.0
+    23 24 0.1320 0.2700  16.0
+    24 25 0.1885 0.3292  16.0
+    25 26 0.2544 0.3800  16.0
+    25 27 0.1093 0.2087  16.0
+    28 27 0.0000 0.3960  65.0
+    27 29 0.2198 0.4153  16.0
+    27 30 0.3202 0.6027  16.0
+    29 30 0.2399 0.4533  16.0
+    8  28 0.0636 0.2000  32.0
+    6  28 0.0169 0.0599  32.0
+  ]
+
+  branches = [
+    BranchData(Int(branch_raw[i, 1]), Int(branch_raw[i, 2]),
+               branch_raw[i, 3], branch_raw[i, 4], branch_raw[i, 5])
+    for i in 1:size(branch_raw, 1)
+  ]
+
+  # Standard generator buses for IEEE 30-bus (6-unit system)
+  gen_buses_6 = [1, 2, 5, 8, 11, 13]
+  gen_bus = gen_buses_6[1:min(generators, 6)]
+  if generators > 6
+    # Extra generators at high-load buses
+    extra_buses = [7, 10, 12, 15]
+    for k in 1:min(generators - 6, length(extra_buses))
+      push!(gen_bus, extra_buses[k])
+    end
+  end
+
+  # Load buses (buses with nonzero demand in standard IEEE 30-bus)
+  load_buses = [2, 3, 4, 5, 7, 8, 10, 12, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 26, 29, 30]
+  # Distribute customers evenly across load buses
+  cust_bus = Int[]
+  for i in 1:customers
+    push!(cust_bus, load_buses[mod(i - 1, length(load_buses)) + 1])
+  end
+
+  return NetworkData(30, branches, gen_bus, cust_bus, 1, 100.0)
+end
+
+# ─────────────────────────────────────────────────────────────────
+# Saudi Eastern Province data (Experiment 6)
+# ─────────────────────────────────────────────────────────────────
+
+function getSaudiDemand(generators::Int, periods::Int = 24)
+  if periods > 24
+    throw("The data will be provided for one day only")
+  end
+  # Saudi Eastern Province summer profile — single afternoon peak (AC cooling)
+  # Peak/min ratio ≈ 2.20, load factor ~0.58
+  # Sources: Alshehri et al. (2019) Energies 12(1); SEC Annual Report 2023
+  Dt_6 = [
+    650, 620, 600, 590, 600, 650,
+    750, 850, 950, 1050, 1150, 1230,
+    1280, 1300, 1290, 1250, 1180, 1100,
+    1020, 950, 880, 810, 740, 690,
+  ]
+  # 10-gen system: scale by 1.7x (peak = 2210 MW)
+  Dt_10 = round.(Int, Dt_6 .* 1.7)
+
+  Dt = if generators == 6
+    Dt_6
+  elseif generators == 10
+    Dt_10
+  else
+    mn, mx = 600, 1300
+    d = Normal(mx, 0.5 * (mx - mn))
+    midday = rand(13:16)
+    round.(Int, vcat(sort(rand(d, midday)), sort(rand(d, 24 - midday), rev = true)))
+  end
+
+  D = if periods == 24
+    Float64.(Dt)
+  else
+    interval_length = floor(24 / periods) |> Int
+    Float64.(vcat([sum(Dt[i:min(24, i * interval_length)]) for i = 1:periods]...) |> shuffle)
+  end
+  D
+end
+
+function getSaudiCostCoefficients(generators::Int)
+  # Saudi fuel mix: 3 CCGT + 2 SCGT + 1 oil-fired steam turbine
+  # Sources: Al-Roomi ELD repository, EPA AP-42 emission factors
+  #   a ($/h)  b ($/MWh)  c ($/MW²h)  e (lb/h)  f (lb/MWh)  g (lb/MW²h)
+  cost_6units = [
+    180  6.5  0.0065  10.2   0.221  0.00345   # G1 CCGT
+    195  6.8  0.0070  11.0   0.235  0.00360   # G2 CCGT
+    210  7.2  0.0075  11.5   0.248  0.00375   # G3 CCGT
+    250  9.5  0.0085  35.0  -0.445  0.00580   # G4 SCGT
+    260 10.0  0.0090  37.0  -0.460  0.00600   # G5 SCGT
+    300 11.5  0.0080  42.0  -0.510  0.00460   # G6 Oil
+  ]
+  # 10-gen: extend with 2 more CCGT + 1 SCGT + 1 oil
+  cost_10units = [
+    180  6.5  0.0065  10.2   0.221  0.00345   # G1  CCGT
+    195  6.8  0.0070  11.0   0.235  0.00360   # G2  CCGT
+    210  7.2  0.0075  11.5   0.248  0.00375   # G3  CCGT
+    250  9.5  0.0085  35.0  -0.445  0.00580   # G4  SCGT
+    260 10.0  0.0090  37.0  -0.460  0.00600   # G5  SCGT
+    300 11.5  0.0080  42.0  -0.510  0.00460   # G6  Oil
+    185  6.6  0.0068  10.5   0.228  0.00350   # G7  CCGT
+    205  7.0  0.0072  11.2   0.240  0.00368   # G8  CCGT
+    255  9.8  0.0088  36.0  -0.452  0.00590   # G9  SCGT
+    310 12.0  0.0082  43.0  -0.520  0.00470   # G10 Oil
+  ]
+
+  cs = if generators == 6
+    cost_6units
+  elseif generators == 10
+    cost_10units
+  else
+    c6umin = minimum(cost_6units, dims = 1) ./ 6
+    c6umax = maximum(cost_6units, dims = 1) ./ 6
+    c10umin = minimum(cost_10units, dims = 1) ./ 10
+    c10umax = maximum(cost_10units, dims = 1) ./ 10
+    cmin = 0.5 * (c6umin + c10umin) * generators
+    cmax = 0.5 * (c6umax + c10umax) * generators
+    nd = Normal.(cmax, 0.5 * (cmax - cmin))
+    C = Matrix{Float64}(undef, generators, 6)
+    foreach(1:6) do i
+      C[:, i] = rand(nd[i], 1, generators)
+    end
+    C
+  end
+  cs
+end
+
+function getSaudiPowerLimits(generators::Int)
+  # Pmin, Pmax, DR (ramp down), UR (ramp up) in MW
+  pl_6 = [
+    100 500 120 80    # G1 CCGT
+     80 450 100 70    # G2 CCGT
+     80 400 100 65    # G3 CCGT
+     50 250  90 50    # G4 SCGT
+     50 200  90 50    # G5 SCGT
+     50 150  80 50    # G6 Oil
+  ]
+  pl_10 = [
+    100 500 120 80    # G1  CCGT
+     80 450 100 70    # G2  CCGT
+     80 400 100 65    # G3  CCGT
+     50 250  90 50    # G4  SCGT
+     50 200  90 50    # G5  SCGT
+     50 150  80 50    # G6  Oil
+     90 480 110 75    # G7  CCGT
+     85 420 100 68    # G8  CCGT
+     50 220  90 50    # G9  SCGT
+     50 160  80 50    # G10 Oil
+  ]
+  pl = if generators == 6
+    pl_6
+  elseif generators == 10
+    pl_10
+  else
+    tmp = Matrix{Float64}(undef, generators, 4)
+    foreach(1:4) do i
+      tmp[:, i] = rand(vcat(pl_6[:, i], pl_10[:, i]), generators)
+    end
+    foreach(1:generators) do i
+      tmp[:, 1:2] = sort(tmp[:, 1:2], dims = 1)
+    end
+    tmp
+  end
+  pl
+end
+
+function getSaudiCustomerData(customers::Int)
+  # K1 (discomfort coef), K2, θ (willingness), CM (max curtailable)
+  # K1 values ~15% higher than existing: AC curtailment discomfort in 45°C heat
+  # θ sorted ascending (required by benefit2 constraint)
+  K5 = [
+    2.10  12.5  0.00  250    # Industrial, unwilling (AC-critical)
+    1.65  12.3  0.15  320    # Commercial, slightly willing
+    1.30  11.8  0.40  450    # Mixed-use, moderate
+    1.05  12.0  0.65  550    # Residential cluster, willing
+    0.92  11.5  1.00  700    # Smart building, fully enrolled
+  ]
+  K7 = [
+    2.10  12.5  0.00  230
+    1.65  12.3  0.12  280
+    1.30  11.8  0.28  350
+    1.05  12.0  0.42  420
+    0.92  11.5  0.60  490
+    1.50  12.2  0.82  580
+    1.70  12.0  1.00  660
+  ]
+  K = if customers == 5
+    K5
+  elseif customers == 7
+    K7
+  else
+    nd = map(enumerate(zip(mean.(eachcol(K7)), std.(eachcol(K7))))) do (i, (m, s))
+      i == 3 ? truncated(Normal(), 0, 1) : Normal(m, s)
+    end
+    tmp = Matrix{Float64}(undef, customers, 4)
+    foreach(1:4) do i
+      r = rand(nd[i], customers)
+      tmp[:, i] = i == 3 ? vcat(0, sort(r)[2:end-1], 1) : r
+    end
+    tmp
+  end
+  K
+end
+
+function getSaudiLambda(customers::Int, periods::Int = 24)
+  # SEC TOU tariff: off-peak 0.19 SAR/kWh ($50.7/MWh), peak 0.76 SAR/kWh ($202.7/MWh)
+  # 4:1 peak/off-peak ratio vs existing PJM data's ~2-3:1
+  # $/MWh base profile (24 hours)
+  base_lambda = [
+    48.0, 48.0, 48.0, 48.0, 48.0,       # Hours 1-5:  deep off-peak
+    52.0, 53.0, 54.0, 54.5, 55.0,        # Hours 6-10: morning ramp
+    55.5, 56.5, 58.0,                     # Hours 11-13: approaching peak
+    195.0, 200.0, 202.7, 203.0,           # Hours 14-17: SEC PEAK (1-5 PM)
+    75.0, 65.0, 60.0, 58.0,              # Hours 18-21: evening decline
+    52.0, 50.0, 48.0,                     # Hours 22-24: night
+  ]
+  # Per-customer variation multipliers
+  multipliers_5 = [0.95, 0.98, 1.00, 1.02, 1.05]
+
+  d = if customers == 5
+    vcat([base_lambda' .* multipliers_5[i] for i in 1:5]...)
+  else
+    mults = range(0.95, 1.05, length = customers)
+    vcat([base_lambda' .* mults[i] for i in 1:customers]...)
+  end
+  d[:, 1:periods]
+end
+
+function getSaudiBudgetLimit(generators::Int)
+  # 20% higher than existing to accommodate peak pricing
+  U = if generators == 6
+    60_000
+  elseif generators == 10
+    120_000
+  else
+    12_000 * generators
+  end
+  U
+end
+
+function getSaudiPimin(customers::Int)
+  # Local gen lower bounds — slightly higher, reflecting Dhahran solar resource
+  pimin_5 = [2, 2, 3, 2, 3]
+  pimin_7 = [2, 2, 3, 2, 3, 2, 3]
+  if customers == 5
+    pimin_5
+  elseif customers == 7
+    pimin_7
+  else
+    rand(2:3, customers)
+  end
+end
+
+function getSaudiPimax(customers::Int)
+  # Local gen upper bounds
+  pimax_5 = [5, 6, 8, 5, 7]
+  pimax_7 = [5, 6, 8, 5, 7, 6, 8]
+  if customers == 5
+    pimax_5
+  elseif customers == 7
+    pimax_7
+  else
+    rand(5:8, customers)
+  end
+end
+
+function getSaudiDeedData(customers::Int, generators::Int, periods::Int)
+  generators_cost_coof = getSaudiCostCoefficients(generators)
+  generators_power_limits = getSaudiPowerLimits(generators)
+  customers_function_data = getSaudiCustomerData(customers)
+  return DeedData(
+    customers,
+    generators,
+    periods,
+    getSaudiDemand(generators, periods),
+    getMatrixB(generators),
+    generators_power_limits[1:generators, 1],
+    generators_power_limits[1:generators, 2],
+    generators_power_limits[1:generators, 3],
+    generators_power_limits[1:generators, 4],
+    customers_function_data[:, 1],
+    customers_function_data[:, 2],
+    customers_function_data[:, 3],
+    customers_function_data[:, 4],
+    getSaudiBudgetLimit(generators),
+    generators_cost_coof[1:generators, 1],
+    generators_cost_coof[1:generators, 2],
+    generators_cost_coof[1:generators, 3],
+    generators_cost_coof[1:generators, 4],
+    generators_cost_coof[1:generators, 5],
+    generators_cost_coof[1:generators, 6],
+    getSaudiLambda(customers, periods),
+  )
+end
+
+function getSaudiGTDeedData(customers::Int, generators::Int, periods::Int)
+  deed_data = getSaudiDeedData(customers, generators, periods)
+  # Generate customer operational coefficients from Normal distributions
+  # fitted to generator cost means (same pattern as getGTDRDeedData)
+  means_of_generators_coef =
+    repeat(mean.([deed_data.a deed_data.b deed_data.c]) ./ customers, customers)
+  dists = fit.(Normal, eachcol(means_of_generators_coef))
+  adot_it, bdot_it = rand(dists[1], customers, periods), rand(dists[2], customers, periods)
+  # Quadratic coefficients negative for strict concavity of U_i (diminishing returns)
+  cdot_it = -abs.(rand(dists[3], customers, periods))  # coef of p^2 < 0
+  ddot_it = -abs.(rand(dists[3], customers, periods))  # coef of s^2 < 0
+  edot_it = rand(dists[2], customers, periods)         # coef of s (linear)
+  ahdot_it = adot_it .- 0.25 * dists[1].σ
+  nudot_it = adot_it .+ 0.25 * dists[1].σ
+  afdot_it = nudot_it .+ 0.125 * dists[1].σ
+  # Distribute demand among customers
+  pertCustomerDt = deed_data.Dt ./ (2 * customers)
+  custpmersDt = getCustomersDemand(vec(collect(pertCustomerDt')), customers, periods)
+  pmin = getSaudiPimin(customers)
+  pmax = getSaudiPimax(customers)
+  return GTDeedData(
+    deed_data,
+    ahdot_it,
+    adot_it,
+    bdot_it,
+    cdot_it,
+    ddot_it,
+    edot_it,
+    nudot_it,
+    afdot_it,
+    custpmersDt,
+    pmin,
+    pmax,
+  )
+end

@@ -4,6 +4,7 @@ function gtdrdeed(
   periods::Int = 24;
   solver::Union{Nothing,MOI.AbstractOptimizer} = nothing,
   data::Union{Nothing,GTDeedData} = nothing,
+  network::Union{Nothing,NetworkData} = nothing,
 )
   gtdata = isnothing(data) ? getGTDRDeedData(customers, generators, periods) : data
   solver =
@@ -120,12 +121,37 @@ function gtdrdeed(
       sum(data.λ[i, t] * χ[i, t] - ω[i, t] for i = 1:customers for t = 1:periods) + Ccust
     )
 
-    @NLexpression(
-      model,
-      losst[t in 1:periods],
-      sum(q[j, t] * data.B[j, k] * q[k, t] for j = 1:generators for k = 1:generators)
-    )
-    # Balance <-- 
+    # Loss model and network constraints
+    if isnothing(network)
+      # B-matrix (Kron's) loss model
+      @NLexpression(
+        model,
+        losst[t in 1:periods],
+        sum(q[j, t] * data.B[j, k] * q[k, t] for j = 1:generators for k = 1:generators)
+      )
+    else
+      # DC-OPF: bus angles, branch flows, and branch-based losses
+      _nb = network.num_buses
+      _nbr = length(network.branches)
+      @variable(model, θ[1:_nb, 1:periods])
+      @variable(model, Pf[1:_nbr, 1:periods])
+      @constraint(model, slackbus[t in 1:periods], θ[network.slack_bus, t] == 0)
+      @constraint(model, dcflow[b in 1:_nbr, t in 1:periods],
+        Pf[b, t] == network.base_mva *
+          (θ[network.branches[b].from, t] - θ[network.branches[b].to, t]) /
+          network.branches[b].x)
+      @constraint(model, flowlim_hi[b in 1:_nbr, t in 1:periods],
+        Pf[b, t] <= network.branches[b].rating)
+      @constraint(model, flowlim_lo[b in 1:_nbr, t in 1:periods],
+        Pf[b, t] >= -network.branches[b].rating)
+      @NLexpression(
+        model,
+        losst[t in 1:periods],
+        sum(network.branches[b].r * Pf[b, t]^2 / network.base_mva for b = 1:_nbr)
+      )
+    end
+
+    # Balance <--
     @constraint(
       model,
       powerbalance1[i in 1:customers, t in 1:periods],
@@ -141,12 +167,44 @@ function gtdrdeed(
       powerbalance3[j in 1:generators, t in 1:periods],
       sum(y[i, j, t] for i = 1:customers) == q[j, t]
     )
-    @NLconstraint(
-      model,
-      powerbalance4[t in 1:periods],
-      sum(x[i, t] for i = 1:customers) + sum(q[j, t] for j = 1:generators) ==
-      sum(gtdata.CDemandt[i, t] for i = 1:customers) + losst[t] - sum(χ[i, t] for i = 1:customers)
-    )
+    if isnothing(network)
+      # Aggregate system power balance with B-matrix losses
+      @NLconstraint(
+        model,
+        powerbalance4[t in 1:periods],
+        sum(x[i, t] for i = 1:customers) + sum(q[j, t] for j = 1:generators) ==
+        sum(gtdata.CDemandt[i, t] for i = 1:customers) + losst[t] - sum(χ[i, t] for i = 1:customers)
+      )
+    else
+      # Per-bus DC power balance (replaces aggregate powerbalance4)
+      _nb_bal = network.num_buses
+      _nbr_bal = length(network.branches)
+      for bus in 1:_nb_bal
+        gens_here = [j for j in 1:generators if network.gen_bus[j] == bus]
+        custs_here = [i for i in 1:customers if network.cust_bus[i] == bus]
+        br_from = [b for b in 1:_nbr_bal if network.branches[b].from == bus]
+        br_to = [b for b in 1:_nbr_bal if network.branches[b].to == bus]
+        for t in 1:periods
+          inj = AffExpr(0.0)
+          for j in gens_here
+            add_to_expression!(inj, 1.0, q[j, t])
+          end
+          for i in custs_here
+            add_to_expression!(inj, 1.0, x[i, t])
+            add_to_expression!(inj, -gtdata.CDemandt[i, t])
+            add_to_expression!(inj, 1.0, χ[i, t])
+          end
+          outflow = AffExpr(0.0)
+          for b in br_from
+            add_to_expression!(outflow, 1.0, Pf[b, t])
+          end
+          for b in br_to
+            add_to_expression!(outflow, -1.0, Pf[b, t])
+          end
+          @constraint(model, inj == outflow)
+        end
+      end
+    end
     ## <-- Balance
 
     # limits -->

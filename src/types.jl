@@ -7,6 +7,24 @@ abstract type ModelData end
 abstract type ModelSolution end
 abstract type ModelResult end
 
+# Network data for DC-OPF constraints
+struct BranchData
+  from::Int
+  to::Int
+  r::Float64
+  x::Float64
+  rating::Float64  # MVA
+end
+
+struct NetworkData
+  num_buses::Int
+  branches::Vector{BranchData}
+  gen_bus::Vector{Int}      # generator j → bus index
+  cust_bus::Vector{Int}     # customer i → bus index
+  slack_bus::Int
+  base_mva::Float64
+end
+
 struct SlimData <: ModelData
   customers::Int
   generators::Int
