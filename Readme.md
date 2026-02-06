@@ -37,7 +37,7 @@ using DRDeed
 model = gtdrdeed(5, 6, 24)
 
 # Solve with balanced weights [cost, emission, utility]
-result = model[:scalarized](; w=[1/3, 1/3, 1/3])
+result = model[:ws]([1/3, 1/3, 1/3])
 
 # Access results
 println("Cost: ", result.solution.Cost)
@@ -45,7 +45,6 @@ println("Emission: ", result.solution.Emission)
 println("Utility: ", result.solution.Utility)
 
 # Convert to DataFrame for analysis
-using DataFrames
 solrep = solution2DataFrame(result.solution)
 ```
 

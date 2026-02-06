@@ -54,7 +54,7 @@ getSaudiGTDeedData()                              # Saudi (v0.5.0)
 
 # Solving:
 model = gtdrdeed(5, 6, 24)
-result = model[:scalarized](; w=[1/3, 1/3, 1/3])
+result = model[:ws]([1/3, 1/3, 1/3])
 
 # Results:
 result.solution.Cost, .Emission, .Utility, .Losst
